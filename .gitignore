@@ -1,0 +1,36 @@
+# ============================================================================
+# Git Ignore 规则
+# ============================================================================
+
+# 环境变量与机密敏感配置文件（切勿提交！）
+.env
+.env.local
+*.env
+!.env.example
+
+# Python 编译缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# PyInstaller 打包与构建产物
+build/
+dist/
+*.exe
+
+# 运行时执行日志与历史会话追踪
+*.jsonl
+agent_execution_trace.jsonl
+sessions/
+
+# 本地分析目录与临时数据
+DeepSeek的Session分析/
+scratch/
+*.log
+
+# IDE 与操作系统临时文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
