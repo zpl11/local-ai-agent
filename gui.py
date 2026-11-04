@@ -1,8 +1,13 @@
 """
-AI 聊天客户端 - GUI 层
+AI 聊天客户端 - GUI 层 (现代化工业级重构版)
 
-tkinter 图形界面：Canvas + Scrollbar 聊天区域，
-线程安全 UI 更新，执行时间线查看窗口。
+特性与升级：
+1. 现代视觉设计：扁平化卡片布局、精选现代调色板、流线型层次与细致边框
+2. 微交互体验：按钮 Hover 动态高亮反馈、手势光标、状态加载动态提示
+3. 多行智能输入：多行自适应输入框，支持 Enter 极速发送与 Shift+Enter 自由换行
+4. Plan-and-Act 可视化看板：任务进度条、状态徽章、支持优雅折叠/展开
+5. 自适应响应式气泡：随窗口宽度动态调整排版折行，代码块等宽渲染
+6. 统一设计语言：时间线追踪窗口与归档窗口均采用沉浸式现代终端与精致表格风格
 """
 
 import tkinter as tk
@@ -12,6 +17,8 @@ import json
 import requests
 from datetime import datetime
 import uuid
+import os
+import subprocess
 
 import config
 from ai_logger import ExecutionLogger
@@ -25,15 +32,107 @@ from session_manager import session_manager
 # 全局日志器实例
 trace_logger = ExecutionLogger()
 
+# ----------------------------------------------------------------------
+# 现代设计语言与配色规范 (Design Tokens)
+# ----------------------------------------------------------------------
+THEME = {
+    # 基础色
+    "bg_main": "#f8fafc",         # 主背景 Slate-50
+    "bg_card": "#ffffff",         # 卡片白
+    "bg_header": "#0f172a",       # 顶部沉稳深空色 Slate-900
+    "border_light": "#e2e8f0",    # 浅边框 Slate-200
+    "border_subtle": "#cbd5e1",   # 次级边框 Slate-300
+    "text_main": "#0f172a",       # 主文本 Slate-900
+    "text_sub": "#64748b",        # 次要文本 Slate-500
+    "text_muted": "#94a3b8",      # 弱化文本 Slate-400
+
+    # 品牌与功能色
+    "primary": "#2563eb",         # 科技蓝 Blue-600
+    "primary_hover": "#1d4ed8",   # Blue-700
+    "success": "#10b981",         # 翡翠绿 Emerald-500
+    "success_hover": "#059669",   # Emerald-600
+    "warning": "#f59e0b",         # 琥珀黄 Amber-500
+    "warning_hover": "#d97706",   # Amber-600
+    "danger": "#ef4444",          # 珊瑚红 Red-500
+    "danger_hover": "#dc2626",    # Red-600
+    "purple": "#8b5cf6",          # 紫水晶 Violet-500
+    "purple_hover": "#7c3aed",    # Violet-600
+    "teal": "#0d9488",            # 水鸭青 Teal-600
+    "teal_hover": "#0f766e",      # Teal-700
+    "cyan": "#0284c7",            # 蔚蓝 Sky-600
+    "cyan_hover": "#0369a1",      # Sky-700
+
+    # 气泡配色体系
+    "bubble_user_bg": "#eff6ff",     # 用户气泡底色 (柔和淡蓝)
+    "bubble_user_border": "#bfdbfe", # 用户气泡描边
+    "bubble_user_text": "#1e3a8a",
+    "bubble_user_tag": "#2563eb",
+
+    "bubble_ai_bg": "#ffffff",       # AI 气泡底色 (纯白卡片)
+    "bubble_ai_border": "#e2e8f0",   # AI 气泡描边
+    "bubble_ai_text": "#1e293b",
+    "bubble_ai_tag": "#059669",
+
+    "bubble_tool_bg": "#0f172a",     # 工具请求 (极客暗黑终端风格)
+    "bubble_tool_border": "#334155",
+    "bubble_tool_text": "#e2e8f0",
+    "bubble_tool_tag": "#f59e0b",
+
+    "bubble_result_bg": "#f0fdf4",   # 工具结果 (清新薄荷绿)
+    "bubble_result_border": "#bbf7d0",
+    "bubble_result_text": "#14532d",
+    "bubble_result_tag": "#16a34a",
+
+    "bubble_error_bg": "#fef2f2",    # 错误提示 (浅红警示)
+    "bubble_error_border": "#fecaca",
+    "bubble_error_text": "#991b1b",
+    "bubble_error_tag": "#dc2626",
+
+    "bubble_system_bg": "#faf5ff",   # 系统/摘要通知 (柔紫)
+    "bubble_system_border": "#e9d5ff",
+    "bubble_system_text": "#581c87",
+    "bubble_system_tag": "#7c3aed",
+
+    # 字体设定
+    "font_family": "Microsoft YaHei UI",
+    "font_code": "Consolas",
+}
+
+
+def create_modern_button(parent, text, bg, fg="white", hover_bg=None,
+                         command=None, font_size=9, bold=False, padx=12, pady=5):
+    """创建扁平现代、带 Hover 微交互与手势反馈的高质感按钮。"""
+    font_weight = "bold" if bold else "normal"
+    btn = tk.Button(
+        parent,
+        text=text,
+        bg=bg,
+        fg=fg,
+        activebackground=hover_bg or bg,
+        activeforeground=fg,
+        font=(THEME["font_family"], font_size, font_weight),
+        relief="flat",
+        bd=0,
+        padx=padx,
+        pady=pady,
+        cursor="hand2",
+        command=command
+    )
+    if hover_bg:
+        btn.bind("<Enter>", lambda e: btn.config(bg=hover_bg))
+        btn.bind("<Leave>", lambda e: btn.config(bg=bg))
+    return btn
+
 
 class ChatApp:
-    """GUI 聊天应用主窗口。"""
+    """现代工业级 GUI 聊天应用主窗口。"""
 
     def __init__(self, root):
         self.root = root
-        self.root.title("AI 聊天客户端 - 大小模型混用版 + 工具调用")
-        self.root.geometry("1000x750")
-        self.root.resizable(True, True)
+        self.root.title("Local AI Agent - 工业级本地智能体协同平台")
+        self.root.geometry("1100x800")
+        self.root.minsize(900, 650)
+        self.root.configure(bg=THEME["bg_main"])
 
         # 对话历史
         self.full_history = []
@@ -42,6 +141,8 @@ class ChatApp:
         ]
         self.msg_counter = 0
         self.is_summarizing = False
+        self.is_sending = False
+        self.todo_expanded = True
 
         # 使用全局工具注册
         self.registry = registry
@@ -60,30 +161,23 @@ class ChatApp:
         self.agent.set_callback("on_error", self._on_tool_error)
         self.agent.set_callback("on_final", self._on_tool_final)
 
-        # 初始化工具
+        # 初始化工具与会话
         self.compressor = Compressor(logger=trace_logger)
-
-        # 可用工具列表
         self.available_tools = self.registry.list_tools()
-
-        # 创建初始会话
         self._create_new_session()
 
+        # 构建现代化 UI 界面
         self._build_ui()
         self.append_message("ai", self._get_welcome_message())
         self._update_session_label()
 
     def _create_new_session(self):
         """创建新会话：归档旧会话 → 生成新 session_id → 重置上下文。"""
-        # 归档旧会话的 trace 日志
         session_manager.archive_current_session()
-        # 创建新会话
         session_manager.create_session()
-        # 重置对话上下文
         self.full_history = []
         self.large_ctx = [{"role": "system", "content": self._build_system_prompt()}]
         self.msg_counter = 0
-        # 清空 TODO
         todo_manager.clear()
 
     # ------------------------------------------------------------------
@@ -133,144 +227,305 @@ class ChatApp:
     def _get_welcome_message(self) -> str:
         tool_count = len(self.available_tools)
         return (
-            "你好！我是 Qwen AI 助手。已启用以下能力：\n\n"
-            "1. **大小模型混用**：大模型深度推理 + 小模型后台摘要\n"
-            "2. **工具调用 (Function Call)**：可通过工具读取文件、浏览目录、执行命令\n"
-            "3. **Plan-and-Act 任务清单**：复杂任务自动拆分步骤，逐步推进\n\n"
-            f"已注册 {tool_count} 个工具: {', '.join(self.available_tools)}\n\n"
-            "💡 **Plan-and-Act 工作流**：\n"
-            "   复杂任务 → 先调用 `init_todo_list` 创建任务清单 →\n"
-            "   每个子任务执行前设为 `in_progress` → 完成后设为 `done`\n\n"
-            "💡 **正确格式**：\n"
-            '   init_todo_list(tasks=["步骤1", "步骤2", "步骤3"])  ← 必须是 JSON 数组\n'
-            "   ❌ 不要用纯文本字符串：init_todo_list(tasks=\"1. 步骤1\")\n\n"
-            "💡 **高效读代码工作流（骨架优先 → 定向读取 → 写文件）**：\n"
-            "   1. `get_code_outline` 查看 Python 代码 AST 骨架（类、函数、行号）\n"
-            "   2. 针对核心逻辑用 `read_file` 定向读取关键行区间\n"
-            "   3. `search_code keyword=xxx` 搜索定位关键代码\n"
-            "   4. `write_markdown_file` 将分析结果写入 .md 文件\n\n"
-            "💡 **为什么用 write_markdown_file？**\n"
-            "   分析结果写入文件后，tool_result 只返回简短消息（几个 token），\n"
-            "   避免聊天窗口被大段文本污染，彻底解决 400 Bad Request 问题。\n\n"
-            "💡 **新对话**：点击顶部栏 `➕ 新对话` 按钮可开始全新对话，\n"
-            "   当前对话的 trace 日志会自动归档到 `sessions/` 目录。\n\n"
-            "💡 **拦截机制**：如果直接调用受限工具（read_file 等）而不先规划任务，\n"
-            "   系统会分四级递进拦截：提醒 → 警告 → 硬拦截 → 自动兜底。\n\n"
-            "试试对我说：'读取当前目录下的文件' 或 '查看系统信息'"
+            "👋 **你好！欢迎使用工业级 Local AI Agent 混合智能协同平台。**\n\n"
+            "🌟 **核心架构与驱动能力**：\n"
+            "• **大模型驱动引擎**：深层长上下文推理与工具编排决策\n"
+            "• **小模型后台常驻**：对话上下文自动滑动摘要与实时修剪压缩\n"
+            "• **工业级 Function Call**：已安全挂载 " + str(tool_count) + " 个本地系统级工具\n"
+            "• **Plan-and-Act 规划闭环**：任务清单自动分解、实时进度看板与渐进式拦截\n\n"
+            "🛠️ **挂载工具**：`" + "`, `".join(self.available_tools) + "`\n\n"
+            "💡 **开始体验**：您可以直接告诉我您的目标，例如：\n"
+            "   • “扫描项目目录结构并生成架构概览”\n"
+            "   • “分析 agent.py 的核心函数调用链并输出分析报告”"
         )
 
     # ------------------------------------------------------------------
-    # UI 构建
+    # UI 构建 (现代化重构)
     # ------------------------------------------------------------------
     def _build_ui(self):
-        # ---- 顶部栏 ----
-        top_frame = tk.Frame(self.root, bg="#2c3e50", pady=8)
-        top_frame.pack(fill="x")
+        # 1. 现代化顶部导航栏
+        self._build_top_nav()
 
-        tk.Label(top_frame, text="AI 聊天", font=("Microsoft YaHei", 14, "bold"),
-                 fg="white", bg="#2c3e50").pack(side="left", padx=10)
+        # 2. Plan-and-Act 任务看板 (TODO)
+        self._build_todo_dashboard()
 
-        tool_info = f"🔧 {len(self.available_tools)} 个工具就绪"
-        self.lbl_tools = tk.Label(top_frame, text=tool_info, font=("Microsoft YaHei", 9),
-                                  fg="#f39c12", bg="#2c3e50")
-        self.lbl_tools.pack(side="left", padx=10)
+        # 3. 聊天消息区 (Canvas + Scrollbar)
+        self._build_chat_area()
 
-        # 新对话按钮
-        btn_new = tk.Button(top_frame, text="➕ 新对话", font=("Microsoft YaHei", 9, "bold"),
-                            bg="#27ae60", fg="white", relief="flat",
-                            command=self.new_conversation, padx=10)
-        btn_new.pack(side="right", padx=5)
+        # 4. 底部现代化输入框与多行发送区
+        self._build_input_area()
 
-        self.btn_summary = tk.Button(top_frame, text="手动摘要", font=("Microsoft YaHei", 9),
-                                     bg="#9b59b6", fg="white", relief="flat",
-                                     command=self.manual_summarize, padx=10)
-        self.btn_summary.pack(side="right", padx=5)
+        # 5. 底部系统状态栏
+        self._build_status_bar()
 
-        btn_trace = tk.Button(top_frame, text="查看时间线", font=("Microsoft YaHei", 9),
-                              bg="#3498db", fg="white", relief="flat",
-                              command=self.show_trace_window, padx=10)
-        btn_trace.pack(side="right", padx=5)
+    def _build_top_nav(self):
+        """现代化深色顶部导航栏，集成系统品牌标识与快捷操作。"""
+        top_bar = tk.Frame(self.root, bg=THEME["bg_header"], height=56)
+        top_bar.pack(fill="x")
+        top_bar.pack_propagate(False)
 
-        btn_archive = tk.Button(top_frame, text="📁 归档会话", font=("Microsoft YaHei", 9),
-                                bg="#16a085", fg="white", relief="flat",
-                                command=self.show_archived_sessions, padx=10)
-        btn_archive.pack(side="right", padx=5)
+        # 品牌与标志
+        brand_frame = tk.Frame(top_bar, bg=THEME["bg_header"])
+        brand_frame.pack(side="left", padx=16, pady=8)
 
-        btn_clear = tk.Button(top_frame, text="清空对话", font=("Microsoft YaHei", 9),
-                              bg="#e74c3c", fg="white", relief="flat",
-                              command=self.clear_chat, padx=10)
-        btn_clear.pack(side="right", padx=5)
+        logo_lbl = tk.Label(
+            brand_frame, text="⚡", font=(THEME["font_family"], 14),
+            fg="#38bdf8", bg=THEME["bg_header"]
+        )
+        logo_lbl.pack(side="left", padx=(0, 6))
 
-        # ---- TODO 列表展示区 ----
-        self.todo_frame = tk.Frame(self.root, bg="#fff9e6", bd=1, relief="solid")
-        self.todo_frame.pack(fill="x", padx=5, pady=(0, 0))
+        title_lbl = tk.Label(
+            brand_frame, text="Local AI Agent", font=(THEME["font_family"], 12, "bold"),
+            fg="#f8fafc", bg=THEME["bg_header"]
+        )
+        title_lbl.pack(side="left")
 
-        self.lbl_todo_header = tk.Label(
-            self.todo_frame, text="📌 TODO List", font=("Microsoft YaHei", 9, "bold"),
-            fg="#e67e22", bg="#fff9e6", anchor="w")
-        self.lbl_todo_header.pack(fill="x", padx=8, pady=4)
+        # 工具就绪徽章 (Pill Badge)
+        tool_badge = tk.Frame(top_bar, bg="#1e293b", padx=8, pady=3)
+        tool_badge.pack(side="left", padx=12, pady=14)
+        self.lbl_tools = tk.Label(
+            tool_badge, text=f"🔧 {len(self.available_tools)} 工具就绪",
+            font=(THEME["font_family"], 8, "bold"), fg="#38bdf8", bg="#1e293b"
+        )
+        self.lbl_tools.pack()
+
+        # 顶部操作按钮组 (从右往左依次布局)
+        btn_frame = tk.Frame(top_bar, bg=THEME["bg_header"])
+        btn_frame.pack(side="right", padx=14, pady=10)
+
+        # 按钮样式统一配置
+        b_clear = create_modern_button(
+            btn_frame, "清空", bg="#334155", fg="#cbd5e1",
+            hover_bg=THEME["danger"], command=self.clear_chat, font_size=8
+        )
+        b_clear.pack(side="right", padx=4)
+
+        b_archive = create_modern_button(
+            btn_frame, "📁 归档会话", bg="#1e293b", fg="#94a3b8",
+            hover_bg=THEME["teal"], command=self.show_archived_sessions, font_size=8
+        )
+        b_archive.pack(side="right", padx=4)
+
+        b_trace = create_modern_button(
+            btn_frame, "⏱ 时间线", bg="#1e293b", fg="#94a3b8",
+            hover_bg=THEME["cyan"], command=self.show_trace_window, font_size=8
+        )
+        b_trace.pack(side="right", padx=4)
+
+        self.btn_summary = create_modern_button(
+            btn_frame, "⚡ 手动摘要", bg="#1e293b", fg="#94a3b8",
+            hover_bg=THEME["purple"], command=self.manual_summarize, font_size=8
+        )
+        self.btn_summary.pack(side="right", padx=4)
+
+        b_new = create_modern_button(
+            btn_frame, "➕ 新会话", bg=THEME["success"], fg="#ffffff",
+            hover_bg=THEME["success_hover"], command=self.new_conversation, font_size=8, bold=True
+        )
+        b_new.pack(side="right", padx=4)
+
+    def _build_todo_dashboard(self):
+        """Plan-and-Act 任务看板：带进度条、徽章与优雅折叠。"""
+        self.todo_frame = tk.Frame(self.root, bg="#ffffff", bd=0)
+        # 默认有任务时自动展示，初始隐藏
+        self.todo_frame.pack(fill="x", padx=16, pady=(10, 0))
+
+        # 顶条容器
+        header_bar = tk.Frame(self.todo_frame, bg="#f1f5f9", padx=12, pady=6)
+        header_bar.pack(fill="x")
+
+        self.lbl_todo_title = tk.Label(
+            header_bar, text="📋 Plan-and-Act 任务编排看板",
+            font=(THEME["font_family"], 9, "bold"), fg="#1e293b", bg="#f1f5f9"
+        )
+        self.lbl_todo_title.pack(side="left")
+
+        self.lbl_todo_stats = tk.Label(
+            header_bar, text="0/0 已完成 (0%)",
+            font=(THEME["font_family"], 8, "bold"), fg=THEME["primary"], bg="#f1f5f9"
+        )
+        self.lbl_todo_stats.pack(side="left", padx=10)
+
+        # 折叠/展开按钮
+        self.btn_toggle_todo = tk.Button(
+            header_bar, text="▲ 折叠看板", font=(THEME["font_family"], 8),
+            fg="#64748b", bg="#f1f5f9", relief="flat", bd=0, cursor="hand2",
+            command=self._toggle_todo_visibility
+        )
+        self.btn_toggle_todo.pack(side="right")
+
+        # 进度条 (Canvas 绘制现代扁平胶囊条)
+        self.todo_progress_canvas = tk.Canvas(self.todo_frame, height=4, bg="#e2e8f0", bd=0, highlightthickness=0)
+        self.todo_progress_canvas.pack(fill="x")
+
+        # 任务清单展示容器
+        self.todo_body = tk.Frame(self.todo_frame, bg="#ffffff", padx=12, pady=8)
+        self.todo_body.pack(fill="x")
 
         self.txt_todo = tk.Text(
-            self.todo_frame, font=("Microsoft YaHei", 9), bg="#fff9e6", fg="#555",
-            height=3, wrap="word", state="disabled", bd=0, padx=8, pady=2)
-        self.txt_todo.pack(fill="x", padx=8, pady=(0, 4))
+            self.todo_body, font=(THEME["font_family"], 9), bg="#ffffff", fg="#334155",
+            height=3, wrap="word", state="disabled", bd=0, relief="flat", padx=4, pady=2
+        )
+        self.txt_todo.pack(fill="x")
 
-        # ---- 状态栏 ----
-        self.status_var = tk.StringVar(value=(
-            f"就绪 | 大模型: {config.LARGE_MODEL_URL} | 小模型: {config.SMALL_MODEL_URL}"
-        ))
-        tk.Label(self.root, textvariable=self.status_var,
-                 font=("Microsoft YaHei", 8), bg="#ecf0f1",
-                 fg="#7f8c8d", anchor="w", pady=3).pack(fill="x")
+        # 初始无任务时先隐藏整个看板
+        self.todo_frame.pack_forget()
 
-        # ---- 聊天区域 ----
-        chat_outer = tk.Frame(self.root)
-        chat_outer.pack(fill="both", expand=True, padx=5, pady=5)
+    def _toggle_todo_visibility(self):
+        """折叠/展开 TODO 列表内容。"""
+        if self.todo_expanded:
+            self.todo_body.pack_forget()
+            self.btn_toggle_todo.config(text="▼ 展开看板")
+            self.todo_expanded = False
+        else:
+            self.todo_body.pack(fill="x")
+            self.btn_toggle_todo.config(text="▲ 折叠看板")
+            self.todo_expanded = True
 
-        self.chat_canvas = tk.Canvas(chat_outer, bg="#f5f5f5", highlightthickness=0)
-        scrollbar = tk.Scrollbar(chat_outer, orient="vertical", command=self.chat_canvas.yview)
-        self.chat_scroll_frame = tk.Frame(self.chat_canvas, bg="#f5f5f5")
+    def _build_chat_area(self):
+        """构建自适应聊天滚动区域。"""
+        chat_container = tk.Frame(self.root, bg=THEME["bg_main"])
+        chat_container.pack(fill="both", expand=True, padx=16, pady=10)
 
+        self.chat_canvas = tk.Canvas(
+            chat_container, bg=THEME["bg_main"], bd=0, highlightthickness=0
+        )
+        scrollbar = ttk.Scrollbar(
+            chat_container, orient="vertical", command=self.chat_canvas.yview
+        )
+        self.chat_scroll_frame = tk.Frame(self.chat_canvas, bg=THEME["bg_main"])
+
+        # 动态绑定滚动区域与窗口大小自适应
+        self.chat_scroll_window = self.chat_canvas.create_window(
+            (0, 0), window=self.chat_scroll_frame, anchor="nw"
+        )
+
+        def _on_canvas_configure(event):
+            # 保持内部滚动容器与 Canvas 宽度一致
+            self.chat_canvas.itemconfig(self.chat_scroll_window, width=event.width)
+            self._adjust_wraplength_all()
+
+        self.chat_canvas.bind("<Configure>", _on_canvas_configure)
         self.chat_scroll_frame.bind(
             "<Configure>",
             lambda e: self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
         )
 
-        self.chat_canvas.create_window((0, 0), window=self.chat_scroll_frame, anchor="nw")
         self.chat_canvas.configure(yscrollcommand=scrollbar.set)
-
         self.chat_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         self.chat_canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.chat_scroll_frame.bind("<MouseWheel>", self._on_mousewheel)
 
-        # ---- 输入区域 ----
-        input_frame = tk.Frame(self.root, bg="white", pady=8, padx=10)
-        input_frame.pack(fill="x", padx=10, pady=(0, 10))
+    def _build_input_area(self):
+        """现代卡片输入区域，支持多行文本、自适应滚动与快捷发送键。"""
+        input_card = tk.Frame(
+            self.root, bg=THEME["bg_card"],
+            highlightbackground=THEME["border_light"],
+            highlightthickness=1,
+            padx=12, pady=8
+        )
+        input_card.pack(fill="x", padx=16, pady=(0, 6))
 
-        self.entry = tk.Entry(input_frame, font=("Microsoft YaHei", 11),
-                              bd=1, relief="solid")
-        self.entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        self.entry.bind("<Return>", lambda e: self.on_send())
+        # 文本输入框 (Text 替换原生单行 Entry)
+        self.text_input = tk.Text(
+            input_card,
+            font=(THEME["font_family"], 10),
+            bg=THEME["bg_card"],
+            fg=THEME["text_main"],
+            height=3,
+            wrap="word",
+            bd=0,
+            relief="flat",
+            padx=4,
+            pady=4,
+            insertbackground=THEME["primary"]
+        )
+        self.text_input.pack(side="left", fill="both", expand=True)
 
-        btn_send = tk.Button(input_frame, text="发送",
-                             font=("Microsoft YaHei", 10, "bold"),
-                             bg="#27ae60", fg="white", relief="flat",
-                             command=self.on_send, width=6)
-        btn_send.pack(side="right")
+        # 键盘快捷键绑定: Enter 发送, Shift+Enter 换行
+        self.text_input.bind("<Return>", self._on_enter_pressed)
+        self.text_input.bind("<Shift-Return>", lambda e: None)  # 保持原生换行
+
+        # 右侧操作栏 (快捷提示与发送按钮)
+        right_panel = tk.Frame(input_card, bg=THEME["bg_card"])
+        right_panel.pack(side="right", fill="y", padx=(8, 0))
+
+        # 快捷键微型提示标签
+        hint_lbl = tk.Label(
+            right_panel, text="Enter 发送\nShift+Enter 换行",
+            font=(THEME["font_family"], 7), fg=THEME["text_muted"], bg=THEME["bg_card"],
+            justify="center"
+        )
+        hint_lbl.pack(pady=(2, 4))
+
+        self.btn_send = create_modern_button(
+            right_panel, "✈ 发送", bg=THEME["primary"], fg="white",
+            hover_bg=THEME["primary_hover"], command=self.on_send,
+            font_size=9, bold=True, padx=14, pady=6
+        )
+        self.btn_send.pack()
+
+    def _build_status_bar(self):
+        """底部状态栏，呈现会话 ID、服务连通性与上下文负载。"""
+        self.status_bar = tk.Frame(self.root, bg="#f1f5f9", height=28, padx=16)
+        self.status_bar.pack(fill="x", side="bottom")
+
+        # 状态指示灯 (绿点)
+        self.status_dot = tk.Label(
+            self.status_bar, text="●", font=(THEME["font_family"], 9),
+            fg=THEME["success"], bg="#f1f5f9"
+        )
+        self.status_dot.pack(side="left", padx=(0, 4))
+
+        self.status_left_var = tk.StringVar(value="服务在线 | 初始化中...")
+        self.lbl_status_left = tk.Label(
+            self.status_bar, textvariable=self.status_left_var,
+            font=(THEME["font_family"], 8), fg="#64748b", bg="#f1f5f9"
+        )
+        self.lbl_status_left.pack(side="left")
+
+        # 右侧模型与上下文占用指标
+        self.status_right_var = tk.StringVar(value="上下文负载: 0%")
+        self.lbl_status_right = tk.Label(
+            self.status_bar, textvariable=self.status_right_var,
+            font=(THEME["font_family"], 8, "bold"), fg=THEME["primary"], bg="#f1f5f9"
+        )
+        self.lbl_status_right.pack(side="right")
 
     def _on_mousewheel(self, event):
         self.chat_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _scroll_to_bottom(self):
-        self.chat_canvas.yview_moveto(1)
+        self.chat_canvas.update_idletasks()
+        self.chat_canvas.yview_moveto(1.0)
+
+    def _on_enter_pressed(self, event):
+        """处理 Enter 键逻辑：若没有按下 Shift 键，则触发发送。"""
+        if event.state & 0x0001:  # Shift 键按下
+            return None
+        self.on_send()
+        return "break"  # 阻止 Text 控件产生默认多余回车
+
+    def _adjust_wraplength_all(self):
+        """当窗口宽度变化时，自适应调整全部消息气泡的折行宽度。"""
+        canvas_width = self.chat_canvas.winfo_width()
+        if canvas_width < 100:
+            return
+        # 预留内边距
+        wrap_width = max(300, canvas_width - 80)
+        for frame in self.chat_scroll_frame.winfo_children():
+            # 找到包含 wraplength 属性的 Label
+            for child in frame.winfo_children():
+                if isinstance(child, tk.Label) and child.cget("wraplength") > 0:
+                    child.config(wraplength=wrap_width)
 
     # ------------------------------------------------------------------
-    # TODO 列表展示
+    # TODO 任务看板动态更新
     # ------------------------------------------------------------------
     def _update_todo_display(self):
-        """刷新 TODO 列表展示区域。"""
+        """刷新 TODO 列表展示区域与进度条。"""
         todos = todo_manager.get_all()
         if not todos:
             self.txt_todo.config(state="normal")
@@ -279,16 +534,29 @@ class ChatApp:
             self.todo_frame.pack_forget()
             return
 
-        self.todo_frame.pack(fill="x", padx=5, pady=(0, 0))
+        self.todo_frame.pack(fill="x", padx=16, pady=(10, 0))
+        total = len(todos)
         done_count = sum(1 for t in todos if t["status"] == "done")
-        self.lbl_todo_header.config(
-            text=f"📌 TODO List ({done_count}/{len(todos)} 已完成)"
+        pct = int((done_count / total) * 100) if total > 0 else 0
+
+        self.lbl_todo_stats.config(
+            text=f"{done_count}/{total} 已完成 ({pct}%)",
+            fg=THEME["success"] if pct == 100 else THEME["primary"]
         )
+
+        # 刷新进度条 Canvas
+        self.todo_progress_canvas.delete("all")
+        width = self.todo_progress_canvas.winfo_width()
+        if width <= 1:
+            width = 1000
+        fill_width = int(width * (pct / 100.0))
+        bar_color = THEME["success"] if pct == 100 else THEME["primary"]
+        self.todo_progress_canvas.create_rectangle(0, 0, fill_width, 4, fill=bar_color, width=0)
 
         lines = []
         for t in todos:
-            icon = {"pending": "⏳", "in_progress": "🔄", "done": "✅"}.get(t["status"], "⏳")
-            lines.append(f"[{t['id']}] {icon} {t['task']} ({t['status']})")
+            icon = {"pending": "⏳ 待执行", "in_progress": "🔄 执行中", "done": "✅ 已完成"}.get(t["status"], "⏳")
+            lines.append(f"[{t['id']}]  {icon}  —  {t['task']}")
 
         self.txt_todo.config(state="normal")
         self.txt_todo.delete("1.0", tk.END)
@@ -300,16 +568,19 @@ class ChatApp:
         if name in ("init_todo_list", "update_todo_status"):
             self.root.after(0, self._update_todo_display)
 
-        display = result[:500] + (" ..." if len(result) > 500 else "")
+        display = result[:500] + (" ... [已截断保留]" if len(result) > 500 else "")
         self.root.after(0, lambda: self._append_tool_result(name, display))
 
     # ------------------------------------------------------------------
     # 消息发送
     # ------------------------------------------------------------------
     def on_send(self):
-        text = self.entry.get().strip()
+        if self.is_sending:
+            return
+
+        text = self.text_input.get("1.0", tk.END).strip()
         if text:
-            self.entry.delete(0, tk.END)
+            self.text_input.delete("1.0", tk.END)
             self.send_message(text)
 
     def get_ctx_usage_pct(self):
@@ -321,7 +592,11 @@ class ChatApp:
         return estimated_tokens / config.LARGE_CTX_MAX
 
     def send_message(self, user_text):
-        """发送消息"""
+        """发送消息并启动后台推理线程。"""
+        self.is_sending = True
+        self.btn_send.config(text="思考中...", bg=THEME["warning"], state="disabled")
+        self.status_dot.config(fg=THEME["warning"])
+
         self.append_message("user", user_text)
         self.full_history.append({"role": "user", "content": user_text})
 
@@ -329,7 +604,7 @@ class ChatApp:
                          args=(user_text,), daemon=True).start()
 
     def _send_with_maybe_summarize(self, user_text):
-        """发送消息，必要时先摘要"""
+        """发送消息，必要时自动触发后台小模型摘要。"""
         trace_id = str(uuid.uuid4())
         self.large_ctx.append({"role": "user", "content": user_text})
 
@@ -337,27 +612,36 @@ class ChatApp:
         if pct > config.SUMMARIZE_THRESHOLD and len(self.large_ctx) > 6:
             self._summarize_context(trace_id)
 
-        loading_id = self.append_message("ai", "思考中...", is_loading=True)
+        loading_id = self.append_message("ai", "🧠 思考中，正在规划与执行...", is_loading=True)
 
         def api_call():
-            messages = list(self.large_ctx)
-            result = self.agent.run(messages, trace_id=trace_id)
+            try:
+                messages = list(self.large_ctx)
+                result = self.agent.run(messages, trace_id=trace_id)
 
-            if result is None:
-                self.root.after(0, lambda: self.update_message(
-                    loading_id, "[错误] 请求失败", is_error=True))
-                return
+                if result is None:
+                    self.root.after(0, lambda: self.update_message(
+                        loading_id, "❌ [错误] 模型请求失败或异常中断，请检查服务地址与日志。", is_error=True))
+                    return
 
-            self.large_ctx.append({"role": "assistant", "content": result})
-            self.full_history.append({"role": "assistant", "content": result})
+                self.large_ctx.append({"role": "assistant", "content": result})
+                self.full_history.append({"role": "assistant", "content": result})
 
-            self.root.after(0, lambda: self.update_message(loading_id, result))
+                self.root.after(0, lambda: self.update_message(loading_id, result))
 
-            new_pct = self.get_ctx_usage_pct()
-            self.root.after(0, lambda: self.status_var.set(
-                f"上下文使用率 {new_pct*100:.0f}% | 大模型: {config.LARGE_MODEL_URL}"))
+            finally:
+                new_pct = self.get_ctx_usage_pct()
+                self.root.after(0, lambda: self._on_finish_turn(new_pct))
 
         threading.Thread(target=api_call, daemon=True).start()
+
+    def _on_finish_turn(self, ctx_pct: float):
+        """单轮对话结束后恢复发送状态与刷新指示灯。"""
+        self.is_sending = False
+        self.btn_send.config(text="✈ 发送", bg=THEME["primary"], state="normal")
+        self.status_dot.config(fg=THEME["success"])
+        self.status_right_var.set(f"上下文负载: {ctx_pct*100:.0f}%")
+        self._update_session_label()
 
     # ------------------------------------------------------------------
     # Agent 回调 (UI 线程安全)
@@ -373,128 +657,190 @@ class ChatApp:
         self.root.after(0, lambda: self._append_tool_error(error_msg))
 
     def _on_tool_final(self, content: str):
-        pass  # 由 _send_with_maybe_summarize 统一处理
+        pass
 
     def _append_tool_call(self, name: str, args: dict):
-        args_text = json.dumps(args, ensure_ascii=False)
-        self.append_message("tool", f"🔧 调用工具: `{name}`\n   参数: {args_text}",
-                            is_loading=False, is_error=False)
+        args_text = json.dumps(args, ensure_ascii=False, indent=2)
+        self.append_message("tool", f"🔧 调用工具: `{name}`\n{args_text}")
 
     def _append_tool_result(self, name: str, result: str):
-        self.append_message("tool_result", f"✅ 工具 `{name}` 返回:\n{result}",
-                            is_loading=False, is_error=False)
+        self.append_message("tool_result", f"✅ 工具 `{name}` 返回结果:\n{result}")
 
     def _append_tool_error(self, error_msg: str):
-        self.append_message("tool_error", f"❌ 工具调用错误:\n{error_msg}",
-                            is_loading=False, is_error=True)
+        self.append_message("tool_error", f"❌ 工具执行异常:\n{error_msg}", is_error=True)
 
     # ------------------------------------------------------------------
-    # UI 辅助
+    # 现代化气泡渲染
     # ------------------------------------------------------------------
     def append_message(self, role, text, is_loading=False, is_error=False):
+        """渲染高质感、现代卡片式消息气泡。"""
         msg_id = self.msg_counter
         self.msg_counter += 1
-
         now = datetime.now().strftime("%H:%M:%S")
 
+        # 角色配置映射
         if role == "user":
-            label, color, bg = "你", "#1a73e8", "#e8f0fe"
+            tag_text = "👤 您"
+            tag_fg = THEME["bubble_user_tag"]
+            bg_color = THEME["bubble_user_bg"]
+            border_color = THEME["bubble_user_border"]
+            text_color = THEME["bubble_user_text"]
+            font_family = THEME["font_family"]
         elif role == "tool":
-            label, color, bg = "🔧 工具请求", "#e67e22", "#fef9e7"
+            tag_text = "⚡ 工具执行请求"
+            tag_fg = THEME["bubble_tool_tag"]
+            bg_color = THEME["bubble_tool_bg"]
+            border_color = THEME["bubble_tool_border"]
+            text_color = THEME["bubble_tool_text"]
+            font_family = THEME["font_code"]
         elif role == "tool_result":
-            label, color, bg = "✅ 工具结果", "#27ae60", "#eafaf1"
+            tag_text = "📦 工具返回数据"
+            tag_fg = THEME["bubble_result_tag"]
+            bg_color = THEME["bubble_result_bg"]
+            border_color = THEME["bubble_result_border"]
+            text_color = THEME["bubble_result_text"]
+            font_family = THEME["font_family"]
         elif role == "tool_error":
-            label, color, bg = "❌ 工具错误", "#e74c3c", "#fce8e6"
+            tag_text = "⚠️ 拦截与执行告警"
+            tag_fg = THEME["bubble_error_tag"]
+            bg_color = THEME["bubble_error_bg"]
+            border_color = THEME["bubble_error_border"]
+            text_color = THEME["bubble_error_text"]
+            font_family = THEME["font_family"]
         elif role == "system":
-            label, color, bg = "系统", "#8e44ad", "#f5eef8"
+            tag_text = "⚙️ 系统管理通知"
+            tag_fg = THEME["bubble_system_tag"]
+            bg_color = THEME["bubble_system_bg"]
+            border_color = THEME["bubble_system_border"]
+            text_color = THEME["bubble_system_text"]
+            font_family = THEME["font_family"]
         else:
-            label, color, bg = "AI", "#34a853", "#f1f8e9" if not is_error else "#fce8e6"
+            tag_text = "🤖 Qwen AI 助手"
+            tag_fg = THEME["bubble_ai_tag"]
+            bg_color = THEME["bubble_ai_bg"] if not is_error else THEME["bubble_error_bg"]
+            border_color = THEME["bubble_ai_border"] if not is_error else THEME["bubble_error_border"]
+            text_color = THEME["bubble_ai_text"] if not is_error else THEME["bubble_error_text"]
+            font_family = THEME["font_family"]
 
-        frame = tk.Frame(self.chat_scroll_frame, bg=bg, bd=1, relief="ridge")
-        frame.pack(fill="x", padx=5, pady=2)
+        # 卡片外层包装框
+        card = tk.Frame(
+            self.chat_scroll_frame,
+            bg=bg_color,
+            highlightbackground=border_color,
+            highlightthickness=1,
+            padx=12, pady=10
+        )
+        card.pack(fill="x", padx=6, pady=4)
 
-        header = tk.Frame(frame, bg=bg)
-        header.pack(fill="x")
-        tk.Label(header, text=label, font=("Microsoft YaHei", 9, "bold"),
-                 fg=color, bg=bg, width=10, anchor="w").pack(side="left")
-        tk.Label(header, text=now, font=("Microsoft YaHei", 8),
-                 fg="#999", bg=bg, anchor="e").pack(side="right")
+        # 气泡头部 (胶囊徽章 + 灰度时间戳)
+        header = tk.Frame(card, bg=bg_color)
+        header.pack(fill="x", pady=(0, 4))
 
-        tk.Label(frame, text=text, font=("Microsoft YaHei", 10),
-                 fg="#333" if not is_error else "#d32f2f",
-                 bg=bg, justify="left", wraplength=850, anchor="w").pack(
-            padx=8, pady=4)
+        tk.Label(
+            header, text=tag_text, font=(THEME["font_family"], 9, "bold"),
+            fg=tag_fg, bg=bg_color
+        ).pack(side="left")
+
+        tk.Label(
+            header, text=now, font=(THEME["font_family"], 8),
+            fg=THEME["text_muted"], bg=bg_color
+        ).pack(side="right")
+
+        # 内容主体
+        canvas_width = self.chat_canvas.winfo_width()
+        wrap_width = max(300, canvas_width - 80) if canvas_width > 100 else 850
+
+        content_lbl = tk.Label(
+            card,
+            text=text,
+            font=(font_family, 10),
+            fg=text_color,
+            bg=bg_color,
+            justify="left",
+            wraplength=wrap_width,
+            anchor="w"
+        )
+        content_lbl.pack(fill="x", pady=(2, 0))
 
         self._scroll_to_bottom()
         return msg_id
 
     def update_message(self, msg_id, text, is_error=False):
+        """更新正在 loading 的气泡内容。"""
         frames = self.chat_scroll_frame.winfo_children()
         if 0 <= msg_id < len(frames):
-            frame = frames[msg_id]
-            labels = [w for w in frame.winfo_children()
-                      if isinstance(w, tk.Label) and w.cget("wraplength") != ""]
+            card = frames[msg_id]
+            labels = [w for w in card.winfo_children()
+                      if isinstance(w, tk.Label) and w.cget("wraplength") > 0]
             if labels:
-                labels[-1].config(text=text,
-                                  fg="#d32f2f" if is_error else "#333")
+                labels[-1].config(
+                    text=text,
+                    fg=THEME["bubble_error_text"] if is_error else THEME["bubble_ai_text"]
+                )
         self._scroll_to_bottom()
 
     # ------------------------------------------------------------------
-    # 时间线日志窗口（增强版：支持按 trace_id 过滤）
+    # 执行时间线窗口 (沉浸式暗黑终端风格)
     # ------------------------------------------------------------------
     def show_trace_window(self):
-        """打开时间线日志查看窗口（支持按 trace_id 过滤 + 归档会话列表）。"""
+        """打开时间线日志查看窗口（现代化终端面板设计）。"""
         win = tk.Toplevel(self.root)
-        win.title("执行时间线日志 (Execution Trace)")
-        win.geometry("900x650")
-        win.resizable(True, True)
+        win.title("执行时间线追踪 (Execution Trace Timeline)")
+        win.geometry("960x680")
+        win.configure(bg="#0f172a")
 
-        # ---- 工具栏 ----
-        toolbar = tk.Frame(win, bg="#2c3e50", pady=5)
-        toolbar.pack(fill="x", padx=5, pady=5)
+        # 现代化深色工具栏
+        toolbar = tk.Frame(win, bg="#1e293b", padx=12, pady=10)
+        toolbar.pack(fill="x")
 
-        # trace_id 下拉选择
-        tk.Label(toolbar, text="Trace ID:", font=("Microsoft YaHei", 9),
-                 fg="#ccc", bg="#2c3e50").pack(side="left", padx=(5, 3))
+        tk.Label(
+            toolbar, text="Trace ID:", font=(THEME["font_family"], 9, "bold"),
+            fg="#94a3b8", bg="#1e293b"
+        ).pack(side="left", padx=(0, 6))
 
         trace_ids = trace_logger.get_unique_trace_ids()
         self.trace_var = tk.StringVar(value="全部")
-        combo = ttk.Combobox(toolbar, textvariable=self.trace_var,
-                             width=22, state="readonly", font=("Microsoft YaHei", 8))
+        combo = ttk.Combobox(
+            toolbar, textvariable=self.trace_var,
+            width=24, state="readonly", font=(THEME["font_family"], 9)
+        )
         combo["values"] = ["全部"] + [f"{tid[:8]}..." for tid in trace_ids]
-        combo.pack(side="left", padx=3)
+        combo.pack(side="left", padx=(0, 10))
         combo.bind("<<ComboboxSelected>>", lambda e: self._refresh_trace_text(text_area))
 
-        btn_refresh_list = tk.Button(toolbar, text="🔄 刷新列表", font=("Microsoft YaHei", 9),
-                                     bg="#3498db", fg="white", relief="flat",
-                                     command=lambda: self._refresh_trace_list(combo, text_area))
-        btn_refresh_list.pack(side="left", padx=3)
+        create_modern_button(
+            toolbar, "🔄 刷新", bg="#334155", hover_bg=THEME["cyan"],
+            command=lambda: self._refresh_trace_list(combo, text_area), font_size=8
+        ).pack(side="left", padx=3)
 
-        btn_copy = tk.Button(toolbar, text="📋 复制日志", font=("Microsoft YaHei", 9),
-                             bg="#27ae60", fg="white", relief="flat",
-                             command=lambda: self._copy_trace_to_clipboard(win))
-        btn_copy.pack(side="left", padx=3)
+        create_modern_button(
+            toolbar, "📋 复制日志", bg="#334155", hover_bg=THEME["success"],
+            command=lambda: self._copy_trace_to_clipboard(win), font_size=8
+        ).pack(side="left", padx=3)
 
-        btn_clear = tk.Button(toolbar, text="🗑 清空日志", font=("Microsoft YaHei", 9),
-                              bg="#e74c3c", fg="white", relief="flat",
-                              command=lambda: self._confirm_clear_trace(text_area))
-        btn_clear.pack(side="left", padx=3)
+        create_modern_button(
+            toolbar, "🗑 清空日志", bg="#334155", hover_bg=THEME["danger"],
+            command=lambda: self._confirm_clear_trace(text_area), font_size=8
+        ).pack(side="left", padx=3)
 
-        # 统计信息
-        self.lbl_trace_stats = tk.Label(toolbar, text=f"共 {len(trace_ids)} 条 trace",
-                                        font=("Microsoft YaHei", 8), fg="#f39c12",
-                                        bg="#2c3e50", anchor="e")
-        self.lbl_trace_stats.pack(side="right", padx=5)
+        self.lbl_trace_stats = tk.Label(
+            toolbar, text=f"共 {len(trace_ids)} 条追踪记录",
+            font=(THEME["font_family"], 8, "bold"), fg="#38bdf8", bg="#1e293b"
+        )
+        self.lbl_trace_stats.pack(side="right")
 
-        # ---- 日志文本区 ----
-        text_frame = tk.Frame(win)
-        text_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # 终端代码文本区
+        text_frame = tk.Frame(win, bg="#0f172a", padx=10, pady=10)
+        text_frame.pack(fill="both", expand=True)
 
-        scrollbar = tk.Scrollbar(text_frame, orient="vertical")
+        scrollbar = ttk.Scrollbar(text_frame, orient="vertical")
         scrollbar.pack(side="right", fill="y")
 
-        text_area = tk.Text(text_frame, font=("Consolas", 9), bg="#1e1e1e", fg="#d4d4d4",
-                            yscrollcommand=scrollbar.set, wrap="none", state="disabled")
+        text_area = tk.Text(
+            text_frame, font=(THEME["font_code"], 9), bg="#090d16", fg="#38bdf8",
+            insertbackground="white", yscrollcommand=scrollbar.set,
+            wrap="none", state="disabled", bd=0, padx=12, pady=12
+        )
         text_area.pack(fill="both", expand=True)
         scrollbar.config(command=text_area.yview)
 
@@ -502,33 +848,23 @@ class ChatApp:
         text_area.bind("<Control-a>", lambda e: text_area.event_generate("<<SelectAll>>"))
 
     def _refresh_trace_list(self, combo, text_area):
-        """刷新 trace_id 下拉列表。"""
         trace_ids = trace_logger.get_unique_trace_ids()
         combo["values"] = ["全部"] + [f"{tid[:8]}..." for tid in trace_ids]
         self.trace_var.set("全部")
-        self.lbl_trace_stats.config(text=f"共 {len(trace_ids)} 条 trace")
+        self.lbl_trace_stats.config(text=f"共 {len(trace_ids)} 条追踪记录")
         self._refresh_trace_text(text_area)
 
     def _refresh_trace_text(self, text_area):
-        """根据当前 trace 选择刷新日志内容。"""
         selected = self.trace_var.get()
-
         if selected == "全部":
             content = trace_logger.read_all_logs()
         else:
-            # 从显示文本还原 trace_id（去掉 "..."）
             short = selected.replace("...", "")
             all_ids = trace_logger.get_unique_trace_ids()
-            target_id = None
-            for tid in all_ids:
-                if tid.startswith(short):
-                    target_id = tid
-                    break
+            target_id = next((tid for tid in all_ids if tid.startswith(short)), None)
             if target_id:
                 events = trace_logger.get_trace_events(target_id)
-                lines = []
-                for event in events:
-                    lines.append(json.dumps(event, ensure_ascii=False))
+                lines = [json.dumps(event, ensure_ascii=False) for event in events]
                 content = "\n".join(lines) if lines else f"(trace {target_id[:8]}... 无事件)"
             else:
                 content = f"(未找到 trace: {selected})"
@@ -545,11 +881,7 @@ class ChatApp:
         else:
             short = selected.replace("...", "")
             all_ids = trace_logger.get_unique_trace_ids()
-            target_id = None
-            for tid in all_ids:
-                if tid.startswith(short):
-                    target_id = tid
-                    break
+            target_id = next((tid for tid in all_ids if tid.startswith(short)), None)
             if target_id:
                 events = trace_logger.get_trace_events(target_id)
                 content = "\n".join(json.dumps(e, ensure_ascii=False) for e in events)
@@ -571,62 +903,64 @@ class ChatApp:
             messagebox.showinfo("提示", "日志已清空。")
 
     # ------------------------------------------------------------------
-    # 归档会话窗口
+    # 归档会话窗口 (现代卡片与表格设计)
     # ------------------------------------------------------------------
     def show_archived_sessions(self):
         """打开已归档会话列表窗口。"""
         win = tk.Toplevel(self.root)
-        win.title("已归档会话 (Archived Sessions)")
-        win.geometry("700x500")
-        win.resizable(True, True)
+        win.title("已归档会话中心 (Archived Sessions)")
+        win.geometry("780x520")
+        win.configure(bg=THEME["bg_main"])
 
         # 工具栏
-        toolbar = tk.Frame(win, bg="#16a085", pady=5)
-        toolbar.pack(fill="x", padx=5, pady=5)
+        toolbar = tk.Frame(win, bg=THEME["bg_header"], padx=14, pady=10)
+        toolbar.pack(fill="x")
 
-        tk.Label(toolbar, text="📁 已归档会话", font=("Microsoft YaHei", 11, "bold"),
-                 fg="white", bg="#16a085").pack(side="left", padx=10)
+        tk.Label(
+            toolbar, text="📁 历史会话归档库", font=(THEME["font_family"], 11, "bold"),
+            fg="#f8fafc", bg=THEME["bg_header"]
+        ).pack(side="left")
 
-        btn_refresh = tk.Button(toolbar, text="🔄 刷新", font=("Microsoft YaHei", 9),
-                                bg="white", fg="#16a085", relief="flat",
-                                command=lambda: self._refresh_archive_list(tree))
-        btn_refresh.pack(side="right", padx=5)
+        create_modern_button(
+            toolbar, "🗑 删除选中", bg="#334155", hover_bg=THEME["danger"],
+            command=lambda: self._delete_archive(tree), font_size=8
+        ).pack(side="right", padx=3)
 
-        btn_open = tk.Button(toolbar, text="📂 打开日志", font=("Microsoft YaHei", 9),
-                             bg="#3498db", fg="white", relief="flat",
-                             command=lambda: self._open_archive_log(tree))
-        btn_open.pack(side="right", padx=5)
+        create_modern_button(
+            toolbar, "📂 打开目录", bg="#334155", hover_bg=THEME["primary"],
+            command=lambda: self._open_archive_log(tree), font_size=8
+        ).pack(side="right", padx=3)
 
-        btn_delete = tk.Button(toolbar, text="🗑 删除选中", font=("Microsoft YaHei", 9),
-                               bg="#e74c3c", fg="white", relief="flat",
-                               command=lambda: self._delete_archive(tree))
-        btn_delete.pack(side="right", padx=5)
+        create_modern_button(
+            toolbar, "🔄 刷新", bg="#334155", hover_bg=THEME["teal"],
+            command=lambda: self._refresh_archive_list(tree), font_size=8
+        ).pack(side="right", padx=3)
 
-        # 表格
-        tree_frame = tk.Frame(win)
-        tree_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        # 表格容器
+        tree_frame = tk.Frame(win, bg=THEME["bg_main"], padx=14, pady=12)
+        tree_frame.pack(fill="both", expand=True)
 
-        scrollbar = tk.Scrollbar(tree_frame, orient="vertical")
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical")
         scrollbar.pack(side="right", fill="y")
 
         columns = ("id", "file", "lines")
-        tree = ttk.Treeview(tree_frame, columns=columns, show="headings",
-                            yscrollcommand=scrollbar.set, selectmode="extended")
+        tree = ttk.Treeview(
+            tree_frame, columns=columns, show="headings",
+            yscrollcommand=scrollbar.set, selectmode="extended"
+        )
         tree.pack(fill="both", expand=True)
         scrollbar.config(command=tree.yview)
 
-        tree.heading("id", text="Session ID (前8位)")
-        tree.heading("file", text="文件名")
-        tree.heading("lines", text="日志行数")
-        tree.column("id", width=150, anchor="w")
-        tree.column("file", width=300, anchor="w")
+        tree.heading("id", text="会话标识 (Session ID)")
+        tree.heading("file", text="归档物理文件")
+        tree.heading("lines", text="追踪条数")
+        tree.column("id", width=160, anchor="w")
+        tree.column("file", width=420, anchor="w")
         tree.column("lines", width=100, anchor="center")
 
         self._refresh_archive_list(tree)
 
     def _refresh_archive_list(self, tree):
-        """刷新归档会话列表。"""
-        # 清空现有行
         for item in tree.get_children():
             tree.delete(item)
 
@@ -634,25 +968,17 @@ class ChatApp:
         for s in sessions:
             tree.insert("", "end", values=(s["id"], s["file"], s["lines"]))
 
-        if sessions:
-            tk.Label(tree, text=f"共 {len(sessions)} 个已归档会话",
-                     font=("Microsoft YaHei", 8), fg="#666", bg="white").pack(
-                side="bottom", pady=3)
-
     def _open_archive_log(self, tree):
-        """打开选中归档会话的日志文件。"""
         selection = tree.selection()
         if not selection:
             messagebox.showinfo("提示", "请先选择一个会话。")
             return
         item = tree.item(selection[0])
-        file_path = item["values"][1]  # file 列
-        if messagebox.askyesno("确认", f"是否在资源管理器中打开文件：\n{file_path}"):
-            import subprocess
+        file_path = item["values"][1]
+        if messagebox.askyesno("确认", f"是否在资源管理器中定位文件：\n{file_path}"):
             subprocess.Popen(['explorer', '/select,', file_path])
 
     def _delete_archive(self, tree):
-        """删除选中的归档会话。"""
         selection = tree.selection()
         if not selection:
             messagebox.showinfo("提示", "请先选择一个会话。")
@@ -661,74 +987,72 @@ class ChatApp:
         file_path = item["values"][1]
         if messagebox.askyesno("确认", f"确定删除归档会话：\n{file_path}？"):
             try:
-                import os
                 os.remove(file_path)
                 self._refresh_archive_list(tree)
-                messagebox.showinfo("提示", "已删除。")
+                messagebox.showinfo("提示", "会话归档已成功删除。")
             except Exception as e:
                 messagebox.showerror("错误", f"删除失败：{e}")
 
     # ------------------------------------------------------------------
-    # 对话管理
+    # 对话会话管理
     # ------------------------------------------------------------------
     def new_conversation(self):
         """开始新对话：归档旧会话 → 创建新 session → 清空 UI。"""
         if self.full_history:
-            if not messagebox.askyesno("确认", "当前对话将归档，是否开始新对话？"):
+            if not messagebox.askyesno("确认", "当前会话数据将自动保存并归档，是否创建全新对话？"):
                 return
         else:
-            if not messagebox.askyesno("确认", "确定开始新对话？当前对话记录将被清空。"):
+            if not messagebox.askyesno("确认", "确定创建全新对话？当前记录将被重置。"):
                 return
 
-        # 创建新会话（自动归档旧 trace）
         session_manager.archive_current_session()
         session_manager.create_session()
 
-        # 重置上下文和 UI
         self.full_history = []
         self.large_ctx = [{"role": "system", "content": self._build_system_prompt()}]
         self.msg_counter = 0
         todo_manager.clear()
+        self._update_todo_display()
+
         for widget in self.chat_scroll_frame.winfo_children():
             widget.destroy()
 
-        # 更新 UI 显示
         self._update_session_label()
-        self._append_tool_result("system", f"✅ 新对话已创建 (Session: {session_manager.current_session_id[:8]})")
+        self._append_tool_result("system", f"🚀 新会话已就绪 (Session ID: {session_manager.current_session_id[:8]})")
         self.append_message("ai", self._get_welcome_message())
 
     def clear_chat(self):
-        """清空当前对话（不清理上下文，仅清空 UI 显示）。"""
-        if messagebox.askyesno("确认", "确定清空所有对话记录？"):
+        """清空当前屏幕显示。"""
+        if messagebox.askyesno("确认", "确定清空当前屏幕中的所有对话气泡？"):
             self.full_history.clear()
             self.large_ctx = [{"role": "system", "content": self._build_system_prompt()}]
             for widget in self.chat_scroll_frame.winfo_children():
                 widget.destroy()
-            self.append_message("ai", "对话已清空，请重新发送消息。")
+            self.append_message("ai", "对话历史已清空，您可以重新发送指令。")
 
     def _update_session_label(self):
-        """更新状态栏中的会话信息。"""
+        """更新状态栏中的会话与模型指标。"""
         info = session_manager.get_session_info()
         session_text = f"Session: {info['id'][:8] if info['id'] else 'None'}"
-        self.status_var.set(
-            f"{session_text} | 大模型: {config.LARGE_MODEL_URL} | 小模型: {config.SMALL_MODEL_URL}"
+        self.status_left_var.set(
+            f"{session_text} | 大模型: {config.LARGE_MODEL_NAME} | 小模型: {config.SMALL_MODEL_NAME}"
         )
 
     # ------------------------------------------------------------------
-    # 摘要
+    # 摘要机制
     # ------------------------------------------------------------------
     def manual_summarize(self):
         if self.is_summarizing:
-            messagebox.showinfo("提示", "摘要进行中，请稍候...")
+            messagebox.showinfo("提示", "正在执行后台压缩摘要，请稍候...")
             return
         if len(self.large_ctx) < 4:
-            messagebox.showinfo("提示", "对话轮次太少，无需摘要。")
+            messagebox.showinfo("提示", "对话轮次较少，无需手动压缩。")
             return
-        self.append_message("system", "[手动摘要] 正在压缩对话历史...", is_loading=False)
+        self.append_message("system", "⚡ [手动摘要触发] 正在唤醒后台小模型压缩长上下文...")
         threading.Thread(target=self._summarize_context, daemon=True).start()
 
     def _summarize_context(self, parent_trace_id: str = None):
-        """用小模型摘要上下文"""
+        """后台调用小模型进行上下文滑动压缩。"""
         if self.is_summarizing:
             return
         self.is_summarizing = True
@@ -786,8 +1110,7 @@ class ChatApp:
 
                 self.root.after(0, lambda: self.append_message(
                     "system",
-                    f"[摘要完成] 对话已压缩，当前上下文使用率: {self.get_ctx_usage_pct()*100:.0f}%",
-                    is_loading=False, is_error=False))
+                    f"✅ [摘要完成] 上下文已成功压缩！当前负载: {self.get_ctx_usage_pct()*100:.0f}%"))
 
             except Exception as e:
                 if parent_trace_id:
@@ -796,8 +1119,7 @@ class ChatApp:
                         "message": str(e),
                     })
                 self.root.after(0, lambda: self.append_message(
-                    "system", f"[摘要失败] {type(e).__name__}: {e}",
-                    is_loading=False, is_error=True))
+                    "system", f"⚠️ [摘要失败] {type(e).__name__}: {e}", is_error=True))
             finally:
                 self.is_summarizing = False
 
@@ -810,5 +1132,5 @@ class ChatApp:
 if __name__ == "__main__":
     root = tk.Tk()
     app = ChatApp(root)
-    root.protocol("WM_DELETE_WINDOW", lambda: (root.destroy()))
+    root.protocol("WM_DELETE_WINDOW", lambda: root.destroy())
     root.mainloop()
